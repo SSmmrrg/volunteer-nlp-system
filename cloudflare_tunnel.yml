@@ -1,0 +1,37 @@
+# Cloudflare Tunnel 配置
+# 用于将本地Python应用暴露到公网
+
+# 1. 首先安装 cloudflared:
+#    https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/tunnel-guide/
+
+# 2. 创建隧道:
+#    cloudflared tunnel create volunteer-nlp
+
+# 3. 将此文件保存为 cloudflared.yml
+
+# 4. 运行隧道:
+#    cloudflared tunnel --config cloudflared.yml run volunteer-nlp
+
+tunnel: volunteer-nlp
+
+# 替换为你的隧道UUID（运行创建命令后获得）
+credentials-file: /path/to/.cloudflared/隧道UUID.json
+
+ingress:
+  # 将本地5000端口暴露到公网
+  - hostname: volunteer-nlp.yourdomain.com  # 替换为你的域名
+    service: http://localhost:5000
+  
+  # 备用：直接使用Cloudflare提供的子域名
+  # - service: http://localhost:5000
+
+  # 404页面
+  - service: http_status:404
+
+# 可选：添加访问日志
+logfile: /path/to/cloudflared.log
+loglevel: info
+
+# 可选：添加访问限制
+# warp-routing:
+#   enabled: true
