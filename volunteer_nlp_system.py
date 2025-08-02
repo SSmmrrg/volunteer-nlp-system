@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 class VolunteerNLPEngine:
     def __init__(self):
         self.current_year = datetime.now().year
+        self.current_date = datetime.now().date()
+        self.max_future_days = 365 
+        self.max_people_count = 50  
         self.load_dictionaries()
         
     def load_dictionaries(self):
@@ -53,21 +56,27 @@ class VolunteerNLPEngine:
         return None
     
     def extract_people_count(self, text: str) -> int:
+        import re
         match = re.search(r'(\d+)人', text)
         if match:
-            return int(match.group(1))
-        if '我和他们' in text or '我们' in text:
-            return 3 
-        elif '我和我朋友' in text or '我和同学' in text or '我和同事' in text:
-            return 2
-        elif '我一个人' in text or '我自己' in text:
-            return 1
-        elif '我和我朋友还有' in text:
-            return 3
+            count = int(match.group(1))
+            return min(count, self.max_people_count)
         for chinese_num, arabic_num in self.number_map.items():
             if f'{chinese_num}个人' in text or f'{chinese_num}人' in text:
-                return arabic_num
-                
+                return min(arabic_num, self.max_people_count)
+        if '我一个人' in text or '我自己' in text:
+            return 1
+        elif '我和朋友' in text or '我和我朋友' in text:
+            return 2
+        elif '我和他们' in text:
+            return 3
+        elif '两个人' in text or '俩人' in text:
+            return 2
+        elif '三个人' in text or '我们三个' in text:
+            return 3
+        elif '我和' in text:
+            return 2
+            
         return 1  
     
     def extract_date(self, text: str) -> Optional[str]:
@@ -85,14 +94,26 @@ class VolunteerNLPEngine:
                 month = int(match.group(1))
                 day = int(match.group(2))
                 if 1 <= month <= 12 and 1 <= day <= 31:
-                    return f"{self.current_year}-{month:02d}-{day:02d}"
+                    try:
+                        target_date = datetime(self.current_year, month, day).date()
+                        if target_date < self.current_date:
+                            return None 
+                        if (target_date - self.current_date).days > self.max_future_days:
+                            return None
+                        return target_date.strftime('%Y-%m-%d')
+                    except ValueError:
+                        return None
+        
         today = datetime.now()
         if '明天' in text:
-            return (today + timedelta(days=1)).strftime('%Y-%m-%d')
+            target_date = today + timedelta(days=1)
+            return target_date.strftime('%Y-%m-%d')
         elif '后天' in text:
-            return (today + timedelta(days=2)).strftime('%Y-%m-%d')
+            target_date = today + timedelta(days=2)
+            return target_date.strftime('%Y-%m-%d')
         elif '大后天' in text:
-            return (today + timedelta(days=3)).strftime('%Y-%m-%d')
+            target_date = today + timedelta(days=3)
+            return target_date.strftime('%Y-%m-%d')
             
         return None
     
@@ -110,8 +131,6 @@ class VolunteerNLPEngine:
                 if len(groups) >= 3:
                     start_hour = int(groups[0] if groups[0] else groups[1])
                     end_hour = int(groups[2] if len(groups) > 2 else groups[1])
-                    
-                    # 处理上午下午
                     if '下午' in text and start_hour < 12:
                         start_hour += 12
                         end_hour += 12
@@ -171,15 +190,48 @@ class VolunteerNLPEngine:
                 
         return "综合"
     
-    def process_natural_language(self, text: str) -> Dict:
-        """处理自然语言输入"""
-        logger.info(f"处理输入: {text}")
+    def validate_input(self, processed_data: Dict) -> Dict:
+        questions = []
+        warnings = []
+        if not processed_data["日期"]:
+            questions.append("请问您希望参加活动的具体日期是？")
+        else:
+            try:
+                target_date = datetime.strptime(processed_data["日期"], '%Y-%m-%d').date()
+                if target_date < self.current_date:
+                    warnings.append("您选择的日期已经过去，请选择未来的日期")
+                    processed_data["日期"] = None  # 清除无效日期
+                    questions.append("请重新选择未来的活动日期")
+                elif (target_date - self.current_date).days > self.max_future_days:
+                    warnings.append("您选择的日期太远了，建议选择一年内的日期")
+                    processed_data["日期"] = None  # 清除无效日期
+                    questions.append("请选择一年内的活动日期")
+            except:
+                warnings.append("日期格式不正确")
+                processed_data["日期"] = None  # 清除无效日期
+                questions.append("请提供正确的日期格式，如：4月3日")
+        if not processed_data["时间"] or processed_data["时间"] == "09:00-17:00":
+            questions.append("请问您希望活动的具体时间段是？")
+        if processed_data["人数"] == 1:
+            pass
+        elif processed_data["人数"] > self.max_people_count:
+            warnings.append(f"人数过多，已限制为{self.max_people_count}人")
+            processed_data["人数"] = self.max_people_count
+        elif processed_data["人数"] > 20:
+            questions.append(f"您计划{processed_data['人数']}人参加，请确认具体人数")
+        if not processed_data["年龄"] or processed_data["年龄"] == "不限":
+            questions.append("请问参与者的年龄大概是多少？")
         
-        # 分词
+        return {
+            "questions": questions,
+            "warnings": warnings,
+            "needs_clarification": len(questions) > 0
+        }
+    
+    def process_natural_language(self, text: str) -> Dict:
+        logger.info(f"处理输入: {text}")
         words = pseg.cut(text)
         logger.info(f"分词结果: {list(words)}")
-        
-        # 提取各项信息
         result = {
             "原始输入": text,
             "年龄": self.extract_age(text),
@@ -189,8 +241,7 @@ class VolunteerNLPEngine:
             "活动类型": self.extract_activity_type(text),
             "处理时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
-        
-        # 验证和补充信息
+        validation = self.validate_input(result)
         if not result["年龄"]:
             result["年龄"] = "不限"
             
@@ -200,11 +251,12 @@ class VolunteerNLPEngine:
         if not result["时间"]:
             result["时间"] = "09:00-17:00"
             
+        result["验证结果"] = validation
+        
         logger.info(f"处理结果: {result}")
         return result
     
     def generate_database_query(self, processed_data: Dict) -> Dict:
-        """生成数据库查询条件"""
         query = {
             "activity_type": processed_data["活动类型"],
             "date": processed_data["日期"],

@@ -14,7 +14,6 @@ database = VolunteerDatabase()
 
 @app.route('/')
 def index():
-    """首页"""
     return """
     <html>
     <head>
@@ -112,6 +111,31 @@ def index():
                 color: #333;
                 margin-bottom: 20px;
                 text-align: center;
+            }
+            
+            .questions-container {
+                background: #fff3cd;
+                border: 1px solid #ffeaa7;
+                border-radius: 10px;
+                padding: 20px;
+                margin: 20px 0;
+            }
+            
+            .question-item {
+                margin: 10px 0;
+                padding: 10px;
+                background: white;
+                border-radius: 5px;
+                border-left: 4px solid #ffc107;
+            }
+            
+            .warning-item {
+                margin: 10px 0;
+                padding: 10px;
+                background: #f8d7da;
+                border-radius: 5px;
+                border-left: 4px solid #dc3545;
+                color: #721c24;
             }
             
             .input-group {
@@ -270,14 +294,58 @@ def index():
                 
                 <div class="form-container">
                     <h3 class="form-title">🧪 在线测试</h3>
-                    <form action="/api/process" method="post">
+                    <form action="/api/process" method="post" id="volunteerForm">
                         <div class="input-group">
                             <label class="input-label">描述您的志愿需求：</label>
                             <textarea name="text" placeholder="例如：我和朋友都是16岁，想在4月3号上午参加环保活动..." required></textarea>
                         </div>
                         <button type="submit" class="submit-btn">🚀 智能匹配</button>
                     </form>
+                    <div id="questionsContainer" style="display: none;">
+                        <h4>需要补充的信息：</h4>
+                        <div id="questionsList"></div>
+                    </div>
                 </div>
+                
+                <script>
+                    document.getElementById('volunteerForm').addEventListener('submit', function(e) {
+                        e.preventDefault();
+                        const formData = new FormData(this);
+                        
+                        fetch('/api/process', {
+                            method: 'POST',
+                            body: formData
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.needs_clarification) {
+                                const container = document.getElementById('questionsContainer');
+                                const list = document.getElementById('questionsList');
+                                
+                                let html = '';
+                                if (data.warnings && data.warnings.length > 0) {
+                                    data.warnings.forEach(warning => {
+                                        html += `<div class="warning-item">⚠️ ${warning}</div>`;
+                                    });
+                                }
+                                
+                                data.questions.forEach(question => {
+                                    html += `<div class="question-item">❓ ${question}</div>`;
+                                });
+                                
+                                list.innerHTML = html;
+                                container.style.display = 'block';
+                            } else {
+                                alert(`找到 ${data.project_count} 个匹配项目！\n详情请在控制台查看。`);
+                                console.log('匹配结果:', data);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            alert('处理失败，请重试');
+                        });
+                    });
+                </script>
             </div>
         </div>
     </body>
@@ -299,16 +367,25 @@ def process_query():
         logger.info(f"收到查询: {text}")
 
         processed_data = nlp_engine.process_natural_language(text)
+        if processed_data.get("验证结果", {}).get("needs_clarification", False):
+            response = {
+                "processed_data": processed_data,
+                "needs_clarification": True,
+                "questions": processed_data["验证结果"]["questions"],
+                "warnings": processed_data["验证结果"]["warnings"],
+                "suggestions": "请补充以下信息以便为您匹配更合适的志愿项目"
+            }
+            return jsonify(response)
 
         query = nlp_engine.generate_database_query(processed_data)
-
         results = database.search_projects(query)
 
         response = {
             "processed_data": processed_data,
             "query_conditions": query,
             "matched_projects": results,
-            "project_count": len(results)
+            "project_count": len(results),
+            "needs_clarification": False
         }
         
         return jsonify(response)
