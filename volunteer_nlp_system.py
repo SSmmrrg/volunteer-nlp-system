@@ -96,10 +96,13 @@ class VolunteerNLPEngine:
                 if 1 <= month <= 12 and 1 <= day <= 31:
                     try:
                         target_date = datetime(self.current_year, month, day).date()
+
                         if target_date < self.current_date:
-                            return None 
+                            target_date = datetime(self.current_year + 1, month, day).date()
+
                         if (target_date - self.current_date).days > self.max_future_days:
                             return None
+                            
                         return target_date.strftime('%Y-%m-%d')
                     except ValueError:
                         return None
@@ -200,15 +203,15 @@ class VolunteerNLPEngine:
                 target_date = datetime.strptime(processed_data["日期"], '%Y-%m-%d').date()
                 if target_date < self.current_date:
                     warnings.append("您选择的日期已经过去，请选择未来的日期")
-                    processed_data["日期"] = None  # 清除无效日期
+                    processed_data["日期"] = None 
                     questions.append("请重新选择未来的活动日期")
                 elif (target_date - self.current_date).days > self.max_future_days:
                     warnings.append("您选择的日期太远了，建议选择一年内的日期")
-                    processed_data["日期"] = None  # 清除无效日期
+                    processed_data["日期"] = None  
                     questions.append("请选择一年内的活动日期")
             except:
                 warnings.append("日期格式不正确")
-                processed_data["日期"] = None  # 清除无效日期
+                processed_data["日期"] = None 
                 questions.append("请提供正确的日期格式，如：4月3日")
         if not processed_data["时间"] or processed_data["时间"] == "09:00-17:00":
             questions.append("请问您希望活动的具体时间段是？")
@@ -275,7 +278,7 @@ class VolunteerDatabase:
                 "id": 1,
                 "name": "城市公园环保清洁行动",
                 "type": "环保",
-                "date": "2024-04-03",
+                "date": "2026-04-03",
                 "time": "08:00-12:00",
                 "age_limit": "12-60",
                 "max_participants": 50,
@@ -286,7 +289,7 @@ class VolunteerDatabase:
                 "id": 2,
                 "name": "社区植树活动",
                 "type": "环保",
-                "date": "2024-04-03",
+                "date": "2026-04-03",
                 "time": "09:00-15:00",
                 "age_limit": "8-65",
                 "max_participants": 30,
@@ -297,7 +300,7 @@ class VolunteerDatabase:
                 "id": 3,
                 "name": "敬老院关爱活动",
                 "type": "社区服务",
-                "date": "2024-04-03",
+                "date": "2026-04-03",
                 "time": "14:00-17:00",
                 "age_limit": "16-70",
                 "max_participants": 20,
@@ -308,7 +311,7 @@ class VolunteerDatabase:
                 "id": 4,
                 "name": "青少年环保教育",
                 "type": "教育",
-                "date": "2024-04-03",
+                "date": "2026-04-03",
                 "time": "10:00-16:00",
                 "age_limit": "10-50",
                 "max_participants": 25,

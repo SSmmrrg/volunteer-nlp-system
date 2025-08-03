@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from flask import Flask, request, jsonify
-from volunteer_nlp_system import VolunteerNLPEngine, VolunteerDatabase
+from volunteer_nlp_system import VolunteerDatabase
+from hybrid_nlp_engine import HybridNLPEngine
 import logging
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-
-nlp_engine = VolunteerNLPEngine()
+nlp_engine = HybridNLPEngine()
 database = VolunteerDatabase()
 
 @app.route('/')
@@ -308,6 +309,43 @@ def index():
                 </div>
                 
                 <script>
+                    function displayResults(data) {
+                        const container = document.getElementById('questionsContainer');
+                        const list = document.getElementById('questionsList');
+                        
+                        let html = '<div style="background: #d4edda; border: 1px solid #c3e6cb; border-radius: 10px; padding: 20px; margin: 20px 0;">';
+                        html += '<h4 style="color: #155724; margin-bottom: 15px;">🎯 解析结果</h4>';
+                        
+                        // 显示提取的信息
+                        if (data.extracted_info) {
+                            const info = data.extracted_info;
+                            html += '<div style="margin-bottom: 15px;">';
+                            html += '<strong>原始文本：</strong>' + data.original_text + '<br>';
+                            
+                            if (info.活动类型) html += '<strong>活动类型：</strong>' + info.活动类型 + '<br>';
+                            if (info.日期) html += '<strong>日期：</strong>' + info.日期 + '<br>';
+                            if (info.时间) html += '<strong>时间：</strong>' + info.时间 + '<br>';
+                            if (info.人数) html += '<strong>人数：</strong>' + info.人数 + '人<br>';
+                            if (info.年龄) html += '<strong>年龄：</strong>' + info.年龄 + '岁<br>';
+                            if (info.特殊要求) html += '<strong>特殊要求：</strong>' + info.特殊要求 + '<br>';
+                            
+                            html += '</div>';
+                        }
+                        
+                        // 显示结构化数据
+                        if (data.structured_data) {
+                            html += '<div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-top: 10px;">';
+                            html += '<strong>结构化数据：</strong><br>';
+                            html += '<pre style="background: white; padding: 10px; border-radius: 5px; margin-top: 5px; font-size: 14px;">' + JSON.stringify(data.structured_data, null, 2) + '</pre>';
+                            html += '</div>';
+                        }
+                        
+                        html += '</div>';
+                        
+                        list.innerHTML = html;
+                        container.style.display = 'block';
+                    }
+                    
                     document.getElementById('volunteerForm').addEventListener('submit', function(e) {
                         e.preventDefault();
                         const formData = new FormData(this);
@@ -336,8 +374,8 @@ def index():
                                 list.innerHTML = html;
                                 container.style.display = 'block';
                             } else {
-                                alert(`找到 ${data.project_count} 个匹配项目！\n详情请在控制台查看。`);
-                                console.log('匹配结果:', data);
+                                // 直接显示解析结果
+                                displayResults(data);
                             }
                         })
                         .catch(error => {
@@ -367,25 +405,13 @@ def process_query():
         logger.info(f"收到查询: {text}")
 
         processed_data = nlp_engine.process_natural_language(text)
-        if processed_data.get("验证结果", {}).get("needs_clarification", False):
-            response = {
-                "processed_data": processed_data,
-                "needs_clarification": True,
-                "questions": processed_data["验证结果"]["questions"],
-                "warnings": processed_data["验证结果"]["warnings"],
-                "suggestions": "请补充以下信息以便为您匹配更合适的志愿项目"
-            }
-            return jsonify(response)
-
-        query = nlp_engine.generate_database_query(processed_data)
-        results = database.search_projects(query)
-
         response = {
-            "processed_data": processed_data,
-            "query_conditions": query,
-            "matched_projects": results,
-            "project_count": len(results),
-            "needs_clarification": False
+            "original_text": text,
+            "extracted_info": processed_data,
+            "structured_data": nlp_engine.generate_database_query(processed_data) if not processed_data.get("验证结果", {}).get("needs_clarification", False) else None,
+            "needs_clarification": processed_data.get("验证结果", {}).get("needs_clarification", False),
+            "questions": processed_data.get("验证结果", {}).get("questions", []) if processed_data.get("验证结果", {}).get("needs_clarification", False) else [],
+            "warnings": processed_data.get("验证结果", {}).get("warnings", []) if processed_data.get("验证结果", {}).get("needs_clarification", False) else []
         }
         
         return jsonify(response)
